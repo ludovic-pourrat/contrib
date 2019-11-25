@@ -77,16 +77,18 @@ func TestAddParams(t *testing.T) {
 func TestAddCommemt(t *testing.T) {
 	var testCase = []struct {
 		comment string
+		matchs []string
 		result  []string
 	}{
 		{
 			"rule for blocking port 8080",
+			[]string{""},
 			[]string{"-m", "comment" ,"--comment", "\"rule for blocking port 8080\""},
 		},
 	}
 	for _, tt := range testCase {
 		var rs ruleSpec
-		rs.addComment(tt.comment)
+		rs.addComment(tt.matchs,tt.comment)
 		if !reflect.DeepEqual(rs.spec,tt.result) {
 			t.Errorf("Expected %s , got %s", tt.result, rs.spec)
 		}
@@ -95,15 +97,15 @@ func TestAddCommemt(t *testing.T) {
 
 func TestTCPFlags(t *testing.T) {
 	var testCase = []struct {
-		tf     tcpFlags
+		tf     TcpFlags
 		result []string
 	}{
 		{
-			tcpFlags{Flags: []string{"SYN", "ACK", "FIN", "RST"}, FlagsSet: []string{"SYN"}},
+			TcpFlags{Flags: []string{"SYN", "ACK", "FIN", "RST"}, FlagsSet: []string{"SYN"}},
 			[]string{"--tcp-flags", "SYN,ACK,FIN,RST","SYN"},
 		},
 		{
-			tcpFlags{Flags: []string{"SYN", "ACK"}, FlagsSet: []string{"ACK"}},
+			TcpFlags{Flags: []string{"SYN", "ACK"}, FlagsSet: []string{"ACK"}},
 			[]string{"--tcp-flags" ,"SYN,ACK", "ACK"},
 		},
 	}
@@ -139,7 +141,7 @@ func TestAddIPRange(t *testing.T) {
 			[]string{"tcp", "iprange"},
 			"192.168.1.100-192.168.1.199",
 			"192.168.1.100-192.168.1.199",
-			[]string{"--src-range", "192.168.1.100-192.168.1.199", "--dst-range", "192.168.1.100-192.168.1.199"},
+			[]string{"-m", "iprange", "--src-range", "192.168.1.100-192.168.1.199", "--dst-range", "192.168.1.100-192.168.1.199"},
 		},
 		{
 			[]string{},
@@ -166,12 +168,12 @@ func TestAddCTState(t *testing.T) {
 		{
 			[]string{"state"},
 			[]string{"NEW", "ESTABLISHED", "INVALID"},
-			[]string{"--ctstate", "NEW,ESTABLISHED,INVALID"},
+			[]string{"-m", "conntrack", "--ctstate", "NEW,ESTABLISHED,INVALID"},
 		},
 		{
 			[]string{"conntrack", "state"},
 			[]string{"NEW", "ESTABLISHED", "INVALID"},
-			[]string{"--ctstate", "NEW,ESTABLISHED,INVALID"},
+			[]string{"-m", "conntrack", "--ctstate", "NEW,ESTABLISHED,INVALID"},
 		},
 		{
 			[]string{""},
@@ -222,7 +224,7 @@ func TestRuleConstruction(t *testing.T) {
 				Table: "filter",
 				Chain: "OUTPUT",
 				Protocol: "tcp",
-				TCPFlags: tcpFlags{
+				TCPFlags: TcpFlags{
 					Flags:[]string{"ACK","RST","SYN","FIN"},
 					FlagsSet:[]string{"SYN"},
 				},
@@ -239,10 +241,10 @@ func TestRuleConstruction(t *testing.T) {
 	}
 }
 
-
-func TestAddRule(t *testing.T) {
+func TestPrintRule(t *testing.T) {
 	var testcases = []struct{
 		rule Rule
+		result string
 	}{
 		{
 			Rule{
@@ -253,6 +255,7 @@ func TestAddRule(t *testing.T) {
 				Comment:         "block all incoming traffic to port 8080",
 				Jump:            "DROP",
 			},
+			"filter INPUT -p tcp --dport 8080 -j DROP -m comment --comment \"block all incoming traffic to port 8080\"",
 		},
 		{
 			Rule{
@@ -265,25 +268,25 @@ func TestAddRule(t *testing.T) {
 				Jump:            "REDIRECT",
 				Comment:         "Redirect web traffic from port 80 to port 8080",
 			},
+			"nat PREROUTING -p tcp --dport 80 -i eth0 -j REDIRECT --to-ports 8080 -m comment --comment \"Redirect web traffic from port 80 to port 8080\"",
 		},
 		{
 			Rule{
 				Table: "filter",
 				Chain: "OUTPUT",
 				Protocol: "tcp",
-				TCPFlags: tcpFlags{
+				TCPFlags: TcpFlags{
 					Flags:[]string{"ALL"},
 					FlagsSet:[]string{"ACK","RST","SYN","FIN"},
 				},
 				Jump: "DROP",
 			},
+			"filter OUTPUT -p tcp --tcp-flags ALL ACK,RST,SYN,FIN -j DROP",
 		},
 	}
-
-	for _, tt := range testcases {
-		err := tt.rule.AddRule() 
-		if err != nil {
-			t.Errorf("Got error %s",err)
+	for _,tt := range testcases {
+		if tt.rule.String() != tt.result {
+			t.Errorf("Expected: %v but got %v",tt.result,tt.rule.String())
 		}
 	}
 }
